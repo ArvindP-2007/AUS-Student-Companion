@@ -10,6 +10,10 @@
   --brand-dark: #326562;
   --brand-soft: #e9f2ef;
   --shadow: 0 10px 30px rgba(33, 57, 48, 0.035);
+  --calendar-assignment: #f7e9e0;
+  --calendar-assessment: #f1e7ef;
+  --calendar-event: #e4efe6;
+  --calendar-class: #e4edee;
   color-scheme: light;
 }
 :root[data-theme="dark"] {
@@ -23,6 +27,10 @@
   --brand-dark: #a4d8cc;
   --brand-soft: #294039;
   --shadow: 0 10px 30px rgba(0, 0, 0, 0.12);
+  --calendar-assignment: #5a4038;
+  --calendar-assessment: #4e3e55;
+  --calendar-event: #365342;
+  --calendar-class: #324d55;
   color-scheme: dark;
 }
 @media (prefers-color-scheme: dark) {
@@ -37,6 +45,10 @@
     --brand-dark: #a4d8cc;
     --brand-soft: #294039;
     --shadow: 0 10px 30px rgba(0, 0, 0, 0.12);
+    --calendar-assignment: #5a4038;
+    --calendar-assessment: #4e3e55;
+    --calendar-event: #365342;
+    --calendar-class: #324d55;
     color-scheme: dark;
   }
 }
@@ -1153,19 +1165,19 @@ textarea {
 }
 .calendar-chip.assignment,
 .calendar-marker.assignment {
-  background: #f7e9e0;
+  background: var(--calendar-assignment);
 }
 .calendar-chip.assessment,
 .calendar-marker.assessment {
-  background: #f1e7ef;
+  background: var(--calendar-assessment);
 }
 .calendar-chip.event,
 .calendar-marker.event {
-  background: #e4efe6;
+  background: var(--calendar-event);
 }
 .calendar-chip.class,
 .calendar-marker.class {
-  background: #e4edee;
+  background: var(--calendar-class);
 }
 .calendar-marker {
   width: 10px;
