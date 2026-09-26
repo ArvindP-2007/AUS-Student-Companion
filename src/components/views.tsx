@@ -24,11 +24,57 @@ import {
   AUS_SCALE,
   NON_GPA_GRADES,
 } from "@/lib/calculations";
-import type { AcademicItem, Course, Note } from "@/lib/types";
+import type { AcademicItem, Course, Meeting, Note } from "@/lib/types";
 import { useApp } from "./companion";
 import { BackupSettings } from "./views_backup";
 
 const days = ["Sun", "Mon", "Tue", "Wed", "Thu", "Fri", "Sat"];
+const schedulePixelsPerMinute = 1.2;
+const minutesOfDay = (time: string) => {
+  const [hours, minutes] = time.split(":").map(Number);
+  return hours * 60 + minutes;
+};
+function positionDayMeetings(meetings: Meeting[]) {
+  const sorted = [...meetings].sort(
+    (a, b) =>
+      minutesOfDay(a.start_time) - minutesOfDay(b.start_time) ||
+      minutesOfDay(a.end_time) - minutesOfDay(b.end_time),
+  );
+  const positioned: { meeting: Meeting; lane: number; laneCount: number }[] =
+    [];
+  let group: Meeting[] = [];
+  let groupEnd = -1;
+
+  const finishGroup = () => {
+    const laneEnds: number[] = [];
+    const placements = group.map((meeting) => {
+      const start = minutesOfDay(meeting.start_time);
+      const end = minutesOfDay(meeting.end_time);
+      let lane = laneEnds.findIndex((laneEnd) => laneEnd <= start);
+      if (lane === -1) lane = laneEnds.length;
+      laneEnds[lane] = end;
+      return { meeting, lane };
+    });
+    positioned.push(
+      ...placements.map((placement) => ({
+        ...placement,
+        laneCount: laneEnds.length,
+      })),
+    );
+  };
+
+  for (const meeting of sorted) {
+    const start = minutesOfDay(meeting.start_time);
+    if (group.length && start >= groupEnd) {
+      finishGroup();
+      group = [];
+    }
+    group.push(meeting);
+    groupEnd = Math.max(groupEnd, minutesOfDay(meeting.end_time));
+  }
+  if (group.length) finishGroup();
+  return positioned;
+}
 const kindLabel = (kind: string) =>
   kind.charAt(0).toUpperCase() + kind.slice(1);
 const calendarDay = (date: Date) =>
@@ -750,12 +796,29 @@ export function ScheduleView() {
     data.courses.filter((c) => c.semester_id === semester?.id).map((c) => c.id),
   );
   const meetings = data.meetings.filter((m) => ids.has(m.course_id));
+  const firstHour = meetings.length
+    ? Math.floor(
+        Math.min(...meetings.map((m) => minutesOfDay(m.start_time))) / 60,
+      )
+    : 8;
+  const lastHour = meetings.length
+    ? Math.ceil(Math.max(...meetings.map((m) => minutesOfDay(m.end_time))) / 60)
+    : 18;
+  const startMinute = firstHour * 60;
+  const trackHeight = (lastHour - firstHour) * 60 * schedulePixelsPerMinute;
+  const hours = Array.from(
+    { length: lastHour - firstHour + 1 },
+    (_, index) => firstHour + index,
+  );
+  const coursesById = new Map(
+    data.courses.map((course) => [course.id, course]),
+  );
   return (
     <>
       <Heading
         eyebrow="WEEK AT A GLANCE"
         title="Class schedule"
-        subtitle="Your recurring classes, arranged by day."
+        subtitle="Your recurring classes on a shared time scale. Blank space is free time."
         action={
           <AddButton
             label="Add class time"
@@ -764,34 +827,71 @@ export function ScheduleView() {
         }
       />
       {meetings.length ? (
-        <div className="schedule-grid">
-          {days.map((day, index) => (
-            <section className="day-column" key={day}>
-              <h2>{day}</h2>
-              {meetings
-                .filter((m) => m.day_of_week === index)
-                .map((m) => {
-                  const course = data.courses.find((c) => c.id === m.course_id);
-                  return (
-                    <button
-                      className="meeting-card"
-                      style={{ borderLeftColor: course?.color }}
-                      key={m.id}
-                      onClick={() =>
-                        edit({ table: "meetings", record: record(m) })
-                      }
-                    >
-                      <strong>
-                        {m.start_time.slice(0, 5)}–{m.end_time.slice(0, 5)}
-                      </strong>
-                      <span>{course?.code}</span>
-                      <small>{course?.name}</small>
-                      <small>{m.location || course?.location || ""}</small>
-                    </button>
-                  );
-                })}
-            </section>
-          ))}
+        <div className="schedule-scroll">
+          <div className="schedule-grid">
+            <div className="schedule-time-column" aria-label="Time of day">
+              <h2>Time</h2>
+              <div
+                className="schedule-time-track"
+                style={{ height: trackHeight }}
+              >
+                {hours.map((hour, index) => (
+                  <span
+                    className="schedule-time-label"
+                    key={hour}
+                    style={{ top: index * 60 * schedulePixelsPerMinute }}
+                  >
+                    {String(hour).padStart(2, "0")}:00
+                  </span>
+                ))}
+              </div>
+            </div>
+            {days.map((day, index) => (
+              <section className="day-column" key={day} aria-label={day}>
+                <h2>{day}</h2>
+                <div className="day-timeline" style={{ height: trackHeight }}>
+                  {positionDayMeetings(
+                    meetings.filter((m) => m.day_of_week === index),
+                  ).map(({ meeting, lane, laneCount }) => {
+                    const course = coursesById.get(meeting.course_id);
+                    const duration =
+                      minutesOfDay(meeting.end_time) -
+                      minutesOfDay(meeting.start_time);
+                    const location = meeting.location || course?.location;
+                    return (
+                      <button
+                        className={`meeting-card${duration < 45 ? " meeting-card-short" : ""}`}
+                        style={{
+                          borderLeftColor: course?.color,
+                          top:
+                            (minutesOfDay(meeting.start_time) - startMinute) *
+                            schedulePixelsPerMinute,
+                          height: duration * schedulePixelsPerMinute,
+                          left: `calc(${(lane / laneCount) * 100}% + 3px)`,
+                          width: `calc(${100 / laneCount}% - 6px)`,
+                        }}
+                        key={meeting.id}
+                        title={`${course?.code || "Class"} · ${meeting.start_time.slice(0, 5)}–${meeting.end_time.slice(0, 5)}${location ? ` · ${location}` : ""}`}
+                        onClick={() =>
+                          edit({ table: "meetings", record: record(meeting) })
+                        }
+                      >
+                        <strong>{course?.code || "Class"}</strong>
+                        <span>
+                          {meeting.start_time.slice(0, 5)}–
+                          {meeting.end_time.slice(0, 5)}
+                        </span>
+                        {duration >= 45 && <small>{course?.name}</small>}
+                        {duration >= 75 && location && (
+                          <small>{location}</small>
+                        )}
+                      </button>
+                    );
+                  })}
+                </div>
+              </section>
+            ))}
+          </div>
         </div>
       ) : (
         <Empty
